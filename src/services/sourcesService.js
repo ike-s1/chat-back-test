@@ -26,7 +26,14 @@ exports.addLinks = async (userId, assistantId, link, mode) => {
   } else if (mode === LINK_MODES.SITEMAP) {
     finalLinks = await extractLinksFromSitemap(link);
   }
-  const existingLinks = await Link.find({ name: { $in: finalLinks } }, { name: 1 }).lean();
+
+  const existingLinks = await Link.find(
+    { 
+      name: { $in: finalLinks },
+      assistantId: assistantId
+    }, 
+    { name: 1 }
+  ).lean();
   const existingNames = new Set(existingLinks.map(l => l.name));
   const linksToInsert = finalLinks.filter(linkUrl => !existingNames.has(linkUrl));
   if (linksToInsert.length === 0) return null;
@@ -39,7 +46,7 @@ exports.addLinks = async (userId, assistantId, link, mode) => {
       assistantId
     }))
   );
-};
+}
 
 exports.deleteLink = async (userId, assistantId, linkId) => {
   if (!assistantId || !linkId) throw new CustomError('assistantId and linkId are required', 400);
