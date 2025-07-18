@@ -171,7 +171,7 @@ async function extractTextFromUrl(url) {
 
   try {
     browser = await puppeteer.launch({
-      executablePath: puppeteer.executablePath(),
+      executablePath: config?.puppeteerExecutablePath || '/usr/bin/google-chrome-stable',
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     });
