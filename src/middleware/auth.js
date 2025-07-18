@@ -1,7 +1,7 @@
 const { verifyToken } = require('../utils/jwt');
 const User = require('../models/User');
 const CustomError = require('./CustomError');
-const logger = require('../logger');
+
 
 
 const auth = async (req, res, next) => {
@@ -19,7 +19,6 @@ const auth = async (req, res, next) => {
     req.token = token;
     next();
   } catch (error) {
-    logger.error('Authentication error:', error);
     res.status(error.status || 401).json({ message: error.message || 'Please authenticate.' });
   }
 };
