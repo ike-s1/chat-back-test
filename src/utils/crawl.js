@@ -207,6 +207,8 @@ async function extractTextFromUrls(urls) {
           console.log(`Navigating to ${url}...`);
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+          await page.waitForTimeout(3000);
+
           try {
             await page.waitForSelector('main, article, #content, .post, .container', { timeout: 10000 });
             console.log(`Selector found on ${url}`);
@@ -258,6 +260,7 @@ async function extractTextFromUrls(urls) {
     }
   }
 }
+
 module.exports = {
   crawlLinksFromPages,
   extractLinksFromSitemap,
