@@ -187,9 +187,9 @@ async function extractTextFromUrl(url) {
         '--disable-gpu',
         '--disable-dev-shm-usage',
         '--no-zygote', 
-        '--single-process', 
       ],
       defaultViewport: { width: 1280, height: 720 },
+      pipe: true,
     });
     const extractPageText = async (url) => {
       let page;
