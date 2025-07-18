@@ -168,65 +168,32 @@ async function crawlLinksFromPages(startUrl) {
 async function extractTextFromUrl(url) {
   let browser;
 
-
   try {
     browser = await puppeteer.launch({
-      executablePath: config?.puppeteerExecutablePath || '/usr/bin/google-chrome-stable',
+      executablePath: '/usr/bin/google-chrome-stable',
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
     });
 
-    const extractPageText = async (url) => {
-      let page;
-      try {
-        page = await browser.newPage();
+    const page = await browser.newPage();
 
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+    // Block images, fonts, styles
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const blocked = ['image', 'stylesheet', 'font', 'media'];
+      if (blocked.includes(req.resourceType())) req.abort();
+      else req.continue();
+    });
 
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115 Safari/537.36');
+    await page.goto(url, { waitUntil: 'load', timeout: 30000 });
 
-        await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 60000 });
+    const text = await page.evaluate(() => document.body.innerText.trim());
 
-        await page.waitForSelector('main, article, #content, .post, .container', { timeout: 10000 }).catch(() => {});
-
-        await page.evaluate(async () => {
-          await new Promise((resolve) => {
-            let totalHeight = 0;
-            const distance = 100;
-            const timer = setInterval(() => {
-              window.scrollBy(0, distance);
-              totalHeight += distance;
-
-              if (totalHeight >= document.body.scrollHeight) {
-                clearInterval(timer);
-                resolve();
-              }
-            }, 100);
-          });
-        });
-
-        await page.evaluate(() => {
-          const removeTags = ['script', 'style', 'meta']; 
-          removeTags.forEach(tag => {
-            document.querySelectorAll(tag).forEach(el => el.remove());
-          });
-        });
-
-        const text = await page.evaluate(() => document.body.innerText.trim());
-
-        return { url, content: text };
-
-      } catch (err) {
-        console.log(`Failed to extract ${url}: ${err.message}`);
-        return null
-      } finally {
-        if (page) await page.close().catch(() => {});
-      }
-    };
-
-    return await extractPageText(url);
+    return { url, content: text };
   } catch (err) {
-    console.log('Unexpected error launching Puppeteer or processing URLs:', err.message);
-    return null
+    console.log(`Error processing ${url}: ${err.message}`);
+    return null;
   } finally {
     if (browser) await browser.close().catch(() => {});
   }
