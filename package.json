@@ -1,0 +1,47 @@
+{
+  "name": "chat-backend",
+  "version": "1.0.0",
+  "description": "Backend for Chat AI Assistant Platform",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "chat",
+    "ai",
+    "assistant",
+    "openai",
+    "gpt"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.839.0",
+    "axios": "^1.10.0",
+    "bcryptjs": "^2.4.3",
+    "chrome-aws-lambda": "^10.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.0.0",
+    "express-validator": "^7.0.1",
+    "form-data": "^4.0.3",
+    "fs": "^0.0.1-security",
+    "google-auth-library": "^10.1.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^7.0.3",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.0.0",
+    "os": "^0.1.2",
+    "path": "^0.12.7",
+    "puppeteer": "^19.7.2",
+    "winston": "^3.17.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
