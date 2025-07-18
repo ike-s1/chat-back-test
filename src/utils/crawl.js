@@ -170,16 +170,41 @@ async function extractTextFromUrl(url) {
 
 
   try {
-    browser = await puppeteer.launch({
-      executablePath: puppeteer.executablePath(),
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
-    });
 
+    try {
+      new URL(url);
+    } catch {
+      console.warn(`Invalid URL: ${url}`);
+      return null
+    }
+    
+    browser = await puppeteer.launch({
+      executablePath: config?.puppeteerExecutablePath || puppeteer.executablePath(),
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--no-zygote', 
+        '--single-process', 
+      ],
+      defaultViewport: { width: 1280, height: 720 },
+    });
     const extractPageText = async (url) => {
       let page;
       try {
         page = await browser.newPage();
+
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+          const type = req.resourceType();
+          if (['image', 'stylesheet', 'font', 'media', 'script'].includes(type)) {
+            req.abort();
+          } else {
+            req.continue();
+          }
+        });
 
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
@@ -205,7 +230,7 @@ async function extractTextFromUrl(url) {
         });
 
         await page.evaluate(() => {
-          const removeTags = ['script', 'style', 'meta']; 
+          const removeTags = ['script', 'style', 'meta', 'iframe', 'video'];
           removeTags.forEach(tag => {
             document.querySelectorAll(tag).forEach(el => el.remove());
           });
