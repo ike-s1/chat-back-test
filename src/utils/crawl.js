@@ -167,7 +167,6 @@ async function crawlLinksFromPages(startUrl) {
 
 async function extractTextFromUrls(urls) {
   let browser;
-  const results = [];
 
   try {
     browser = await puppeteer.launch({
@@ -176,7 +175,11 @@ async function extractTextFromUrls(urls) {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     });
 
-    for (const url of urls) {
+    // dynamic import for p-limit (since it's ESM)
+    const pLimit = (await import('p-limit')).default;
+    const limit = pLimit(5); // concurrency = 5
+
+    const tasks = urls.map(url => limit(async () => {
       let page;
       try {
         page = await browser.newPage();
@@ -184,6 +187,16 @@ async function extractTextFromUrls(urls) {
         await page.setUserAgent(
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
         );
+
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+          const resourceType = req.resourceType();
+          if (['image', 'stylesheet', 'font', 'media', 'script'].includes(resourceType)) {
+            req.abort();
+          } else {
+            req.continue();
+          }
+        });
 
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
@@ -198,14 +211,18 @@ async function extractTextFromUrls(urls) {
 
         const text = await page.evaluate(() => document.body.innerText.trim());
 
-        results.push({ url, content: text });
+        return { url, content: text };
       } catch (err) {
         console.log(`Failed to extract ${url}: ${err.message}`);
-        results.push(null);
+        return null;
       } finally {
         if (page) await page.close().catch(() => {});
       }
-    }
+    }));
+
+    // Run all tasks concurrently with limit
+    const results = await Promise.all(tasks);
+    return results;
 
   } catch (err) {
     console.log('Unexpected error launching Puppeteer or processing URLs:', err.message);
@@ -213,8 +230,6 @@ async function extractTextFromUrls(urls) {
   } finally {
     if (browser) await browser.close().catch(() => {});
   }
-
-  return results;
 }
 
 module.exports = {
