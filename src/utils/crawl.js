@@ -74,8 +74,6 @@ async function getInternalLinks(targetUrl) {
 
         if (parsed.origin !== baseUrl.origin) continue;
         if (!parsed.protocol.startsWith('http')) continue;
-
-        // Normalize
         parsed.hash = '';
         parsed.pathname = parsed.pathname.replace(/\/+$/, '');
         parsed.search = Array.from(parsed.searchParams.entries())
@@ -85,12 +83,11 @@ async function getInternalLinks(targetUrl) {
 
         const cleanHref = parsed.href;
 
-        // ✅ Exclude static files by extension
         if (!fileExtensionRegex.test(parsed.pathname)) {
           internalLinks.add(cleanHref);
         }
       } catch {
-        // Skip malformed URLs
+        
       }
     }
 
@@ -169,66 +166,98 @@ async function extractTextFromUrls(urls) {
   let browser;
 
   try {
+    console.log('Launching Puppeteer browser...');
     browser = await puppeteer.launch({
       executablePath: puppeteer.executablePath(),
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+      ],
     });
 
-    const limit = pLimit(5)
+    const limit = pLimit(5);
 
-    const tasks = urls.map(url => limit(async () => {
-      let page;
-      try {
-        page = await browser.newPage();
+    const tasks = urls.map(url =>
+      limit(async () => {
+        let page;
+        try {
+          console.log(`Opening page for URL: ${url}`);
+          page = await browser.newPage();
 
-        await page.setUserAgent(
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-        );
+          await page.setUserAgent(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+          );
 
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-          const resourceType = req.resourceType();
-          if (['image', 'font', 'media'].includes(resourceType)) {
-            req.abort();
-          } else {
-            req.continue();
-          }
-        });
-
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-        await page.waitForSelector('main, article, #content, .post, .container', { timeout: 10000 }).catch(() => {});
-
-        await page.evaluate(() => {
-          const removeTags = ['script', 'style', 'meta'];
-          removeTags.forEach(tag => {
-            document.querySelectorAll(tag).forEach(el => el.remove());
+          await page.setRequestInterception(true);
+          page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            if (['image', 'font', 'media'].includes(resourceType)) {
+              req.abort();
+            } else {
+              req.continue();
+            }
           });
-        });
 
-        const text = await page.evaluate(() => document.body.innerText.trim());
+          console.log(`Navigating to ${url}...`);
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        return { url, content: text };
-      } catch (err) {
-        console.log(`Failed to extract ${url}: ${err.message}`);
-        return null;
-      } finally {
-        if (page) await page.close().catch(() => {});
-      }
-    }));
+          try {
+            await page.waitForSelector('main, article, #content, .post, .container', { timeout: 10000 });
+            console.log(`Selector found on ${url}`);
+          } catch (selectorErr) {
+            console.warn(`Selector not found on ${url}, continuing without it.`);
+          }
+
+          await page.evaluate(() => {
+            const removeTags = ['script', 'style', 'meta'];
+            removeTags.forEach(tag => {
+              document.querySelectorAll(tag).forEach(el => el.remove());
+            });
+          });
+
+          const text = await page.evaluate(() => document.body.innerText.trim());
+
+          console.log(`Extracted text length from ${url}: ${text.length}`);
+
+          return { url, content: text };
+        } catch (err) {
+          console.error(`Failed to extract ${url}: ${err.message}`, err);
+          return { url, content: null, error: err.message };
+        } finally {
+          if (page) {
+            try {
+              await page.close();
+            } catch (closeErr) {
+              console.warn(`Error closing page for ${url}: ${closeErr.message}`);
+            }
+          }
+        }
+      })
+    );
 
     const results = await Promise.all(tasks);
+    console.log('Extraction complete.');
     return results;
-
   } catch (err) {
-    console.log('Unexpected error launching Puppeteer or processing URLs:', err.message);
-    return urls.map(() => null);
+    console.error('Unexpected error launching Puppeteer or processing URLs:', err);
+    return urls.map(url => ({ url, content: null, error: err.message }));
   } finally {
-    if (browser) await browser.close().catch(() => {});
+    if (browser) {
+      try {
+        await browser.close();
+        console.log('Browser closed.');
+      } catch (closeErr) {
+        console.warn(`Error closing browser: ${closeErr.message}`);
+      }
+    }
   }
 }
-
 module.exports = {
   crawlLinksFromPages,
   extractLinksFromSitemap,
