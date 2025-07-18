@@ -32,7 +32,7 @@ async function extractLinksFromSitemap(sitemapUrl) {
 
 async function getInternalLinks(targetUrl) {
   const browser = await puppeteer.launch({
-    executablePath: config?.puppeteerExecutablePath || '/usr/bin/google-chrome-stable',
+    executablePath: puppeteer.executablePath(),
     headless: 'new',
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
   });
@@ -165,9 +165,9 @@ async function crawlLinksFromPages(startUrl) {
   return Array.from(allLinks);
 }
 
-async function extractTextFromUrl(url) {
+async function extractTextFromUrls(urls) {
   let browser;
-
+  const results = [];
 
   try {
     browser = await puppeteer.launch({
@@ -176,20 +176,21 @@ async function extractTextFromUrl(url) {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     });
 
-    const extractPageText = async (url) => {
+    for (const url of urls) {
       let page;
       try {
         page = await browser.newPage();
 
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+        await page.setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+        );
 
-
-        await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         await page.waitForSelector('main, article, #content, .post, .container', { timeout: 10000 }).catch(() => {});
 
         await page.evaluate(() => {
-          const removeTags = ['script', 'style', 'meta']; 
+          const removeTags = ['script', 'style', 'meta'];
           removeTags.forEach(tag => {
             document.querySelectorAll(tag).forEach(el => el.remove());
           });
@@ -197,28 +198,27 @@ async function extractTextFromUrl(url) {
 
         const text = await page.evaluate(() => document.body.innerText.trim());
 
-        return { url, content: text };
-
+        results.push({ url, content: text });
       } catch (err) {
         console.log(`Failed to extract ${url}: ${err.message}`);
-        return null
+        results.push(null);
       } finally {
         if (page) await page.close().catch(() => {});
       }
-    };
+    }
 
-    return await extractPageText(url);
   } catch (err) {
     console.log('Unexpected error launching Puppeteer or processing URLs:', err.message);
-    return null
+    return urls.map(() => null);
   } finally {
     if (browser) await browser.close().catch(() => {});
   }
-}
 
+  return results;
+}
 
 module.exports = {
   crawlLinksFromPages,
   extractLinksFromSitemap,
-  extractTextFromUrl
+  extractTextFromUrls
 };

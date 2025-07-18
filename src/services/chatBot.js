@@ -4,7 +4,7 @@ const QnA = require('../models/QnA');
 const Text = require('../models/Text');
 const r2Service = require('./r2Service');
 const openAIAgentService = require('./openaiAgent');
-const { extractTextFromUrl } = require('../utils/crawl');
+const { extractTextFromUrls } = require('../utils/crawl');
 const fs = require('fs');
 const { MAX_TOTAL_LINKS } = require('../constants/limits');
 
@@ -48,20 +48,29 @@ async function processAssistantData(assistant) {
     }
   }
 
-  for (const link of newLinks) {
-    try {
-      let result = await processLink(assistant, link);
-      link.mark =  result?.failed ? 'failed' :'trained';
+  try {
+    const results = await processLinks(assistant, newLinks);
+  
+    for (let i = 0; i < newLinks.length; i++) {
+      const link = newLinks[i];
+      const result = results[i];
+  
+      link.mark = result?.failed ? 'failed' : 'trained';
       link.r2_file_key = result.r2key;
       link.openai_storage_key = result.linkFileId;
-      await link.save();
-    } catch (e) {
-      link.mark = 'failed';
-      await link.save();
-      console.error('Link error:', e);
-      errors.push(e);
+  
+      try {
+        await link.save();
+      } catch (e) {
+        console.error(`Error saving link ${link?.name}:`, e);
+        errors.push(e);
+      }
     }
+  } catch (e) {
+    console.error('processLinks failed:', e);
+    errors.push(e);
   }
+  
 
   try {
     await processQnA(assistant, newQnAs);
@@ -115,48 +124,82 @@ async function processFile(assistant, fileDoc) {
   }
 }
 
-async function processLink(assistant, link) {
-  const page = await extractTextFromUrl(link?.name);
-  if (!page || !page.content || !page.url) {
-    return {
-      link: link?.name || null,
-      failed: true
-    };
-  }
+async function processLinks(assistant, links) {
+  const results = [];
 
-  let vectorStoreId = assistant.vectorStoreId;
-  let linkFileId;
+  const urls = links.map(link => link?.name);
 
-  const filename = `page-${sanitizeFilename(page.url)}.txt`;
-  const contentBuffer = Buffer.from(page.content, 'utf8');
-  link.size = contentBuffer.length;
-  const r2Key = r2Service.generateUniqueId('txt');
-  let r2Result = await r2Service.uploadFile(contentBuffer, r2Key, 'text/plain');
 
-  const tmpPath = await openAIAgentService.writeBufferToTempFile(contentBuffer, filename);
+  const pages = await extractTextFromUrls(urls);
 
-  try {
-    if (!vectorStoreId) {
-      const vectorStore = await openAIAgentService.createVectorStoreWithFiles(tmpPath);
-      vectorStoreId = vectorStore.id;
-      assistant.vectorStoreId = vectorStoreId;
-      await assistant.save();
-    } else {
-      linkFileId = await openAIAgentService.addFileToVectorStore(vectorStoreId, tmpPath);
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    const page = pages[i];
+
+    if (!page || !page.content || !page.url) {
+      console.error(`Failed to extract content from ${link?.name}`);
+      results.push({
+        link: link?.name || null,
+        failed: true,
+      });
+      link.mark = 'failed';
+      await link.save();
+      continue;
     }
 
-    await openAIAgentService.updateAssistantWithVectorStore(vectorStoreId, assistant.openaiAssistantId);
+    try {
+      let vectorStoreId = assistant.vectorStoreId;
+      let linkFileId;
 
-    return {
-      link: page.url,
-      r2key: r2Key,
-      failed: !r2Result,
-      linkFileId: linkFileId,
-    };
-  } finally {
-    await fs.promises.unlink(tmpPath).catch(() => {});
+      const filename = `page-${sanitizeFilename(page.url)}.txt`;
+      const contentBuffer = Buffer.from(page.content, 'utf8');
+      link.size = contentBuffer.length;
+
+      const r2Key = r2Service.generateUniqueId('txt');
+      const r2Result = await r2Service.uploadFile(contentBuffer, r2Key, 'text/plain');
+
+      const tmpPath = await openAIAgentService.writeBufferToTempFile(contentBuffer, filename);
+
+      try {
+        if (!vectorStoreId) {
+          const vectorStore = await openAIAgentService.createVectorStoreWithFiles(tmpPath);
+          vectorStoreId = vectorStore.id;
+          assistant.vectorStoreId = vectorStoreId;
+          await assistant.save();
+        } else {
+          linkFileId = await openAIAgentService.addFileToVectorStore(vectorStoreId, tmpPath);
+        }
+
+        await openAIAgentService.updateAssistantWithVectorStore(vectorStoreId, assistant.openaiAssistantId);
+
+        link.mark = r2Result ? 'trained' : 'failed';
+        link.r2_file_key = r2Key;
+        link.openai_storage_key = linkFileId;
+        await link.save();
+
+        results.push({
+          link: page.url,
+          r2key: r2Key,
+          failed: !r2Result,
+          linkFileId,
+        });
+      } finally {
+        await fs.promises.unlink(tmpPath).catch(() => {});
+      }
+    } catch (err) {
+      console.error(`Error processing link "${link?.name}":`, err);
+      link.mark = 'failed';
+      await link.save();
+      results.push({
+        link: link?.name || null,
+        failed: true,
+      });
+    }
   }
+
+  return results;
 }
+
 
 async function processQnA(assistant, qnaDocs) {
   if (qnaDocs.length === 0) return;
