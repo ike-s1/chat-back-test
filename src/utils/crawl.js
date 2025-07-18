@@ -1,7 +1,7 @@
 const axios = require('axios');
 const xml2js = require('xml2js');
 const puppeteer = require('puppeteer');
-const config = require('../config');
+const pLimit = require('p-limit');
 
 const MAX_PAGES = 5000;
 const CONCURRENCY = 5;
@@ -175,9 +175,7 @@ async function extractTextFromUrls(urls) {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     });
 
-    // dynamic import for p-limit (since it's ESM)
-    const pLimit = (await import('p-limit')).default;
-    const limit = pLimit(5); // concurrency = 5
+    const limit = pLimit(5)
 
     const tasks = urls.map(url => limit(async () => {
       let page;
@@ -191,7 +189,7 @@ async function extractTextFromUrls(urls) {
         await page.setRequestInterception(true);
         page.on('request', (req) => {
           const resourceType = req.resourceType();
-          if (['image', 'stylesheet', 'font', 'media', 'script'].includes(resourceType)) {
+          if (['image', 'font', 'media'].includes(resourceType)) {
             req.abort();
           } else {
             req.continue();
@@ -220,7 +218,6 @@ async function extractTextFromUrls(urls) {
       }
     }));
 
-    // Run all tasks concurrently with limit
     const results = await Promise.all(tasks);
     return results;
 
