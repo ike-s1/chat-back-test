@@ -136,11 +136,11 @@ async function processLinks(assistant, links) {
     const link = links[i];
     const page = pages[i];
 
-    if (!page || !page.content || !page.url) {
+    if (!page || !page.text || !page.url) {
       console.error(`Failed to extract content from ${link?.name}`);
       results.push({
         link: link?.name || null,
-        failed: true,
+        failed: !!page?.error,
       });
       link.mark = 'failed';
       await link.save();
@@ -152,7 +152,7 @@ async function processLinks(assistant, links) {
       let linkFileId;
 
       const filename = `page-${sanitizeFilename(page.url)}.txt`;
-      const contentBuffer = Buffer.from(page.content, 'utf8');
+      const contentBuffer = Buffer.from(page.text, 'utf8');
       link.size = contentBuffer.length;
 
       const r2Key = r2Service.generateUniqueId('txt');
